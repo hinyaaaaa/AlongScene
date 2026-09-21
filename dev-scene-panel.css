@@ -31,7 +31,7 @@
   color: #d7dbe4; font-size: 12.5px; cursor: pointer;
   font-family: inherit;
   transition: border-color .15s, background .15s, color .15s, transform .1s;
-  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px) saturate(var(--glass-sat)); backdrop-filter: blur(10px) saturate(var(--glass-sat));
 }
 .char-chip:hover { border-color: rgba(231, 185, 76, 0.5); color: #fff; }
 .char-chip:active { transform: scale(.96); }
@@ -61,7 +61,7 @@
   border-radius: 999px;
   color: var(--gold, #e7b94c); font-size: 12.5px; font-weight: 700; cursor: pointer;
   font-family: inherit;
-  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px) saturate(var(--glass-sat)); backdrop-filter: blur(10px) saturate(var(--glass-sat));
   transition: background .15s, transform .1s;
 }
 #dev-scene-panel-toggle:hover { background: rgba(255,255,255,.1); }
@@ -75,7 +75,7 @@
   background: rgba(12, 12, 18, 0.92);
   border: 1px solid var(--line, rgba(255, 255, 255, 0.15));
   border-radius: 18px;
-  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px) saturate(var(--glass-sat)); backdrop-filter: blur(14px) saturate(var(--glass-sat));
   display: flex; flex-direction: column;
   overflow: hidden;
   transition: opacity .18s, transform .18s;

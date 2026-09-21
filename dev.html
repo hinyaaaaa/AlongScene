@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>推しカメラ - 開発者モード(PC)</title>
+<title>AlongScene - 開発者モード(PC)</title>
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="dev.css">
 <link rel="stylesheet" href="dev-scene-panel.css">
@@ -33,7 +33,7 @@
 
 <!-- 左上：タイトルと操作方法 -->
 <div id="dev-header">
-  <h1>推しカメラ 開発者モード</h1>
+  <h1>AlongScene 開発者モード</h1>
   <p>カメラなし・仮想空間でポーズ/表情を確認・調整できます（PCのブラウザ向け）</p>
   <p class="dev-controls-hint">左ドラッグ: 回転　右ドラッグ: 平行移動　ホイール: ズーム</p>
 </div>
@@ -81,8 +81,13 @@
 <div id="dev-tune-panel">
   <div class="pose-panel-head"><span>ポーズ調整</span></div>
   <div class="pose-panel-row">
+    <label>検索</label>
+    <input type="search" id="tune-bone-search" placeholder="ボーン名で絞り込み…" autocomplete="off">
+  </div>
+  <div class="pose-panel-row">
     <label>ボーン</label>
     <select id="tune-bone-select"></select>
+    <button id="tune-bone-reset-btn" title="このボーンだけ初期値に戻す" disabled>↺</button>
   </div>
   <div class="pose-panel-row slider-row">
     <label>X</label>
@@ -101,12 +106,23 @@
   </div>
   <div class="pose-panel-actions">
     <button id="tune-reset-btn">このポーズを初期値に戻す</button>
-    <button id="tune-copy-btn">JSONをコピー</button>
+    <button id="tune-copy-btn">差分JSONをコピー</button>
+  </div>
+  <div class="pose-panel-row" id="tune-preset-row">
+    <label>保存</label>
+    <select id="tune-preset-select"><option value="">(プリセットなし)</option></select>
+    <button id="tune-preset-apply-btn" title="適用">適用</button>
+    <button id="tune-preset-save-btn" title="現在の調整を名前を付けて保存">＋保存</button>
+    <button id="tune-preset-delete-btn" title="削除"><span class="icon-svg" data-icon="close"></span></button>
   </div>
   <p class="pose-panel-hint" id="pose-panel-hint"></p>
   <p class="dev-tune-note">
     ここで追い込んだ数値がそのままスマホ版のポーズ定義に使えます。
-    「JSONをコピー」の内容をClaudeに送ってください。
+    「差分JSONをコピー」は初期値から変更したボーンだけを出力します。
+    ボーン一覧の●は変更済みの目印。調整内容はこの端末に自動保存され、
+    リロードしても復元されます。ショートカット: <kbd>R</kbd>視点リセット /
+    <kbd>G</kbd>グリッド切替 / 選択中ボーンを矢印キーで微調整
+    (←→=X, ↑↓=Y, Shift+↑↓=Z)。
   </p>
 </div>
 

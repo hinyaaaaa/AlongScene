@@ -82,7 +82,7 @@ body.dev-mode:active { cursor: grabbing; }
   border-radius: 18px;
   padding: 16px;
   overflow-y: auto;
-  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px) saturate(var(--glass-sat)); backdrop-filter: blur(14px) saturate(var(--glass-sat));
   animation: devFadeUp .4s .15s ease-out both;
 }
 #dev-tune-panel .pose-panel-head { color: var(--gold, #e7b94c); font-weight: 700; margin-bottom: 14px; }

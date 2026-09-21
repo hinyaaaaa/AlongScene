@@ -7,6 +7,10 @@ import { loadCharacter as loadCharacterCore, disposeCharacter } from './js/chara
 import { buildExpressionBar, buildPoseBar, createPoseTuner } from './js/pose-ui.js';
 import { DevEnvironment, buildEnvironmentControls, buildColorGradePanel } from './js/dev-environment.js';
 import { buildCalibrationPanel } from './js/calibration-tool.js';
+import { createPosePresetStore } from './js/dev-pose-presets.js';
+import { injectIcons } from './js/icons.js';
+
+injectIcons();
 
 /* ============================================================
    DOM
@@ -20,6 +24,8 @@ const poseBar = document.getElementById('pose-bar');
 const expressionBar = document.getElementById('expression-bar');
 const posePanelHint = document.getElementById('pose-panel-hint');
 const tuneBoneSelect = document.getElementById('tune-bone-select');
+const tuneBoneSearch = document.getElementById('tune-bone-search');
+const tuneBoneResetBtn = document.getElementById('tune-bone-reset-btn');
 const tuneX = document.getElementById('tune-x');
 const tuneY = document.getElementById('tune-y');
 const tuneZ = document.getElementById('tune-z');
@@ -28,6 +34,10 @@ const tuneYVal = document.getElementById('tune-y-val');
 const tuneZVal = document.getElementById('tune-z-val');
 const tuneResetBtn = document.getElementById('tune-reset-btn');
 const tuneCopyBtn = document.getElementById('tune-copy-btn');
+const tunePresetSelect = document.getElementById('tune-preset-select');
+const tunePresetApplyBtn = document.getElementById('tune-preset-apply-btn');
+const tunePresetSaveBtn = document.getElementById('tune-preset-save-btn');
+const tunePresetDeleteBtn = document.getElementById('tune-preset-delete-btn');
 const resetViewBtn = document.getElementById('dev-reset-view-btn');
 const gridBtn = document.getElementById('dev-grid-btn');
 const bgInput = document.getElementById('dev-bg-input');
@@ -227,7 +237,7 @@ screenshotBtn.addEventListener('click', () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `oshi-camera-dev-${Date.now()}.png`;
+    a.download = `alongscene-dev-${Date.now()}.png`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
   }, 'image/png');
@@ -269,6 +279,35 @@ let activeCharacter = null;
 let activeCharacterId = null;
 let loadGeneration = 0;
 
+// ADR-017: ポーズ調整の自動保存・名前付きプリセット(dev.js専用、localStorage)。
+const presetStore = createPosePresetStore();
+
+/** 現在のキャラクター×ポーズの差分を自動保存する(スライダー操作のたびに軽量に呼ぶ)。 */
+function autosaveCurrentPose() {
+  if (!activeCharacter || !activeCharacterId) return;
+  const diff = poseTuner.buildDiffObject();
+  presetStore.saveAutosave(activeCharacterId, activeCharacter.activePoseKey, diff);
+}
+
+/** 現在のキャラクター×ポーズに自動保存があれば復元する(キャラ読み込み直後・ポーズ切替直後に呼ぶ)。 */
+function applyAutosaveIfAny() {
+  if (!activeCharacter || !activeCharacterId) return;
+  const saved = presetStore.loadAutosave(activeCharacterId, activeCharacter.activePoseKey);
+  if (!saved) return;
+  Object.entries(saved).forEach(([name, xyz]) => activeCharacter.setBoneDelta(name, xyz));
+}
+
+/** プリセットのselect optionを、現在のキャラクターのものに差し替える。 */
+function refreshPresetSelect() {
+  tunePresetSelect.innerHTML = '<option value="">(プリセットなし)</option>';
+  if (!activeCharacterId) return;
+  presetStore.listPresetNames(activeCharacterId).forEach((name) => {
+    const opt = document.createElement('option');
+    opt.value = name; opt.textContent = name;
+    tunePresetSelect.appendChild(opt);
+  });
+}
+
 const LOAD_TIMEOUT_MS = 15000;
 let loadTimeoutId = null;
 
@@ -301,8 +340,13 @@ function loadAndActivateCharacter(def) {
       // 較正ツールが動かしたplacementを引き継いで初期表示する
       // (通常時はcalibPlacementは原点のままなので見た目は従来通り)
       character.setTransform(calibPlacement);
+      // ADR-017: 前回このキャラクター×ポーズで調整した内容があれば復元する。
+      applyAutosaveIfAny();
+      refreshPresetSelect();
       buildExpressionBar(expressionBar, def, () => activeCharacter, (label) => showPoseToast(`表情: ${label}`));
       buildPoseBar(poseBar, def, () => activeCharacter, (label) => {
+        // ADR-017: ポーズを切り替えた直後、そのポーズ用の自動保存があれば復元してから表示する。
+        applyAutosaveIfAny();
         poseTuner.refresh();
         showPoseToast(`ポーズ: ${label}`);
       });
@@ -352,10 +396,104 @@ const poseTuner = createPoseTuner({
   xSlider: tuneX, ySlider: tuneY, zSlider: tuneZ,
   xVal: tuneXVal, yVal: tuneYVal, zVal: tuneZVal,
   hint: posePanelHint,
+  search: tuneBoneSearch,
+  boneResetBtn: tuneBoneResetBtn,
 }, () => activeCharacter);
 
-tuneResetBtn.addEventListener('click', () => poseTuner.resetToDefault());
+tuneResetBtn.addEventListener('click', () => { poseTuner.resetToDefault(); autosaveCurrentPose(); });
 tuneCopyBtn.addEventListener('click', () => poseTuner.copyJSON());
+// ADR-017: スライダー操作・ボーン単体リセットのたびに自動保存する
+// (pose-ui.js側の内部リスナーとは別に、dev.js側からも同じイベントへ
+// 追加でリスナーを張るだけなので、既存挙動には影響しない)。
+[tuneX, tuneY, tuneZ].forEach((slider) => slider.addEventListener('input', autosaveCurrentPose));
+tuneBoneResetBtn.addEventListener('click', autosaveCurrentPose);
+
+tunePresetSaveBtn.addEventListener('click', () => {
+  if (!activeCharacter || !activeCharacterId) return;
+  const diff = poseTuner.buildDiffObject();
+  if (Object.keys(diff).length === 0) {
+    showPoseToast('初期値から変更したボーンがありません');
+    return;
+  }
+  const name = window.prompt('プリセット名を入力してください:', '');
+  if (!name) return;
+  presetStore.savePreset(activeCharacterId, name, activeCharacter.activePoseKey, diff);
+  refreshPresetSelect();
+  tunePresetSelect.value = name;
+  showPoseToast(`プリセット「${name}」を保存しました`);
+});
+tunePresetApplyBtn.addEventListener('click', () => {
+  const name = tunePresetSelect.value;
+  if (!name || !activeCharacter || !activeCharacterId) return;
+  const preset = presetStore.getPreset(activeCharacterId, name);
+  if (!preset) return;
+  // プリセットは保存時のポーズ名も持っているので、違うポーズ用のものを
+  // 誤って適用しないよう、まず該当ポーズへ切り替える。pose-bar側の
+  // ボタン表示(active状態)も揃えるため、character.setPose()を直接
+  // 呼ぶのではなく、対応するボタン(data-pose-key)を探してクリックさせる。
+  if (activeCharacter.activePoseKey !== preset.poseKey) {
+    const poseBtn = poseBar.querySelector(`.pose-btn[data-pose-key="${preset.poseKey}"]`);
+    if (poseBtn) poseBtn.click(); else activeCharacter.setPose(preset.poseKey);
+  }
+  Object.entries(preset.bones).forEach(([boneName, xyz]) => activeCharacter.setBoneDelta(boneName, xyz));
+  poseTuner.refresh();
+  autosaveCurrentPose();
+  showPoseToast(`プリセット「${name}」を適用しました`);
+});
+tunePresetDeleteBtn.addEventListener('click', () => {
+  const name = tunePresetSelect.value;
+  if (!name || !activeCharacterId) return;
+  if (!window.confirm(`プリセット「${name}」を削除しますか？`)) return;
+  presetStore.deletePreset(activeCharacterId, name);
+  refreshPresetSelect();
+  showPoseToast(`プリセット「${name}」を削除しました`);
+});
+
+/* ============================================================
+   キーボードショートカット(ADR-017新規、PC専用なのでdev.js限定)
+   ------------------------------------------------------------
+   R: 視点リセット / G: グリッド切替 / 矢印キー: 選択中ボーンの微調整
+   (←→=X、↑↓=Y、Shift+↑↓=Z、1回の押下で1度)。
+   テキスト入力中(検索欄など)は奪わないよう、フォーカスが
+   input/select/textareaの時は無効化する。
+   ============================================================ */
+const NUDGE_STEP_DEG = 1;
+function isTypingTarget(el) {
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || el.isContentEditable;
+}
+function nudgeSelectedBone(axis, deltaDeg) {
+  const slider = axis === 'x' ? tuneX : axis === 'y' ? tuneY : tuneZ;
+  if (slider.disabled) return;
+  const next = THREE.MathUtils.clamp(Number(slider.value) + deltaDeg, Number(slider.min), Number(slider.max));
+  slider.value = String(next);
+  slider.dispatchEvent(new Event('input', { bubbles: true }));
+}
+window.addEventListener('keydown', (e) => {
+  // 検索欄・ボーン選択(select)にフォーカスがある間は、矢印キーの
+  // ネイティブな挙動(カーソル移動・選択肢の切り替え)を優先し、
+  // ショートカットは一切発火させない。
+  if (isTypingTarget(document.activeElement)) return;
+  switch (e.key) {
+    case 'r': case 'R':
+      resetViewBtn.click();
+      break;
+    case 'g': case 'G':
+      gridBtn.click();
+      break;
+    case 'ArrowLeft':
+      e.preventDefault(); nudgeSelectedBone('x', -NUDGE_STEP_DEG); break;
+    case 'ArrowRight':
+      e.preventDefault(); nudgeSelectedBone('x', NUDGE_STEP_DEG); break;
+    case 'ArrowUp':
+      e.preventDefault(); nudgeSelectedBone(e.shiftKey ? 'z' : 'y', NUDGE_STEP_DEG); break;
+    case 'ArrowDown':
+      e.preventDefault(); nudgeSelectedBone(e.shiftKey ? 'z' : 'y', -NUDGE_STEP_DEG); break;
+    default:
+      return;
+  }
+});
 
 /* ============================================================
    レンダーループ

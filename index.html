@@ -5,15 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="OshiCamera">
+<meta name="apple-mobile-web-app-title" content="AlongScene">
 <meta name="theme-color" content="#07070c">
-<link rel="apple-touch-icon" id="oshi-icon" href="">
-<!-- ホーム画面アイコン(ADR-016)：Flowlyの前身であるAltair(Altair_SPA.html)の
-     アイコン生成手法(canvas上に8方向スターをグラデーション線で描き、角丸の
-     黒バッジに載せる)をそのまま踏襲し、配色のみOshiCameraのブランド色
-     (黒×金)に置き換えた。画像ファイルを追加しないノービルド方針は維持。 -->
-<script id="oshi-icon-gen">(function(){
-function drawOshiIcon(canvas,scale){
+<link rel="apple-touch-icon" id="along-icon" href="">
+<!-- ホーム画面アイコン(ADR-016、ADR-017でAlongSceneへ改称)：Flowlyの前身である
+     Altair(Altair_SPA.html)のアイコン生成手法(canvas上に8方向スターを
+     グラデーション線で描き、角丸の黒バッジに載せる)をそのまま踏襲し、
+     配色のみブランド色(黒×金)に置き換えた。画像ファイルを追加しない
+     ノービルド方針は維持。 -->
+<script id="along-icon-gen">(function(){
+function drawAlongIcon(canvas,scale){
   var S=canvas.width, ctx=canvas.getContext('2d'), cx=S/2, cy=S/2, r=S*0.21;
   ctx.fillStyle='#07070c';
   ctx.beginPath();ctx.moveTo(r,0);ctx.lineTo(S-r,0);ctx.arcTo(S,0,S,r,r);
@@ -31,21 +32,27 @@ function drawOshiIcon(canvas,scale){
   ds(g,20,1);
   var gs=ctx.createLinearGradient(148,148,60,60);gs.addColorStop(0,'rgba(30,16,0,0.35)');gs.addColorStop(1,'rgba(30,16,0,0)');
   ds(gs,20,1); ds('#fff',5,0.2); ds('#fff3d6',1.5,0.45);
+  // ADR-017: CSS側の --glass-spec (上端の specular highlight) と揃えた、
+  // ガラスの膨らみを表す柔らかいハイライト。角丸バッジのクリップは
+  // ここでもまだ有効なので、そのまま重ねるだけで縁からはみ出さない。
+  var hi=ctx.createRadialGradient(cx-S*0.18,cy-S*0.28,0,cx-S*0.18,cy-S*0.28,S*0.62);
+  hi.addColorStop(0,'rgba(255,255,255,.30)'); hi.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.globalAlpha=1; ctx.fillStyle=hi; ctx.fillRect(0,0,S,S);
   ctx.restore();
   // 中央にシャッター円(カメラアプリであることを示す小さな意匠)
   ctx.beginPath(); ctx.arc(cx,cy,S*0.075,0,Math.PI*2);
   ctx.fillStyle='#07070c'; ctx.fill();
   ctx.lineWidth=S*0.012; ctx.strokeStyle='rgba(255,243,214,.8)'; ctx.stroke();
 }
-var c=document.createElement('canvas'); c.width=180; c.height=180; drawOshiIcon(c,0.72);
+var c=document.createElement('canvas'); c.width=180; c.height=180; drawAlongIcon(c,0.72);
 var png=c.toDataURL('image/png');
-document.getElementById('oshi-icon').href=png;
+document.getElementById('along-icon').href=png;
 ['57','72','76','114','120','144','152','180'].forEach(function(sz){
   var l=document.createElement('link'); l.rel='apple-touch-icon';
   l.setAttribute('sizes',sz+'x'+sz); l.href=png; document.head.appendChild(l);
 });
 })();</script>
-<title>推しカメラ</title>
+<title>AlongScene</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -55,7 +62,7 @@ document.getElementById('oshi-icon').href=png;
   <div class="halo-field"><div class="halo-stars"></div></div>
   <div class="select-wrap">
     <div class="select-heading">
-      <h1>推しカメラ</h1>
+      <h1>AlongScene</h1>
       <p>一緒に撮影する推しを選んでください</p>
     </div>
     <div id="character-list" class="char-carousel"></div>
@@ -70,9 +77,9 @@ document.getElementById('oshi-icon').href=png;
     <div class="start-orb"></div>
     <h1>準備OK</h1>
     <div class="perm-list">
-      <div class="perm-row"><span class="perm-mark">📷</span><span><b>カメラ</b>への映像アクセス</span></div>
-      <div class="perm-row"><span class="perm-mark">🧭</span><span><b>向きの検知</b>(コンパス較正用)</span></div>
-      <div class="perm-row"><span class="perm-mark">📳</span><span><b>モーション</b>(手ぶれ検知用)</span></div>
+      <div class="perm-row"><span class="perm-mark"><span class="icon-svg" data-icon="camera"></span></span><span><b>カメラ</b>への映像アクセス</span></div>
+      <div class="perm-row"><span class="perm-mark"><span class="icon-svg" data-icon="compass"></span></span><span><b>向きの検知</b>(コンパス較正用)</span></div>
+      <div class="perm-row"><span class="perm-mark"><span class="icon-svg" data-icon="motion"></span></span><span><b>モーション</b>(手ぶれ検知用)</span></div>
     </div>
     <button id="start-btn">はじめる</button>
     <p class="start-note" id="start-error"></p>
@@ -89,11 +96,20 @@ document.getElementById('oshi-icon').href=png;
 <div id="flash-overlay"></div>
 <div id="countdown-overlay"><span id="countdown-num"></span></div>
 
-<!-- 初回設置ステップ -->
+<!-- 配置ステップ(初回設置・再配置 共通)
+     ADR-017: 再配置時は従来ワントーストのみで消えてしまい、かつ
+     🎯ボタンでのキャンセルはドック自動収納(ui-gestures.js)により
+     実質押せなくなっていた(配置モードに入ると確定以外に抜け道が
+     ない状態だった)。常駐の説明+距離表示+常に押せるキャンセルを
+     追加して解消する。 -->
 <div id="placement-intro">
   <div id="placement-intro-text">円をドラッグして立つ位置を決めてください<br>決まったら「ここに配置」を押してください</div>
+  <div id="placement-distance-badge"><span id="placement-distance-val">—</span>m先</div>
 </div>
-<button id="placement-confirm-btn">ここに配置</button>
+<div id="placement-actions">
+  <button id="placement-cancel-btn">キャンセル</button>
+  <button id="placement-confirm-btn">ここに配置</button>
+</div>
 
 <!-- 操作UI -->
 <div id="ui-layer">
@@ -108,12 +124,12 @@ document.getElementById('oshi-icon').href=png;
        アングル切替(全身/上半身/顔アップ)は廃止し、代わりにデバッグログ
        ボタン(旧・画面左上の🐛単独ボタン)をここへ集約した。 -->
   <div id="top-dock">
-    <button id="reticle-btn" class="fan-btn" title="配置/再配置"><span>◎</span><span class="fan-label">位置</span></button>
-    <button id="shadow-adjust-btn" class="fan-btn" title="影の向き・長さ調整"><span>◐</span><span class="fan-label">影</span></button>
-    <button id="timer-btn" class="fan-btn" title="セルフタイマー"><span>⏱</span><span class="fan-label">タイマー</span></button>
-    <button id="mode-btn" class="fan-btn" title="写真/動画 切替"><span class="mode-chip-fan">📷</span><span class="fan-label">写真</span></button>
-    <button id="reset-btn" class="fan-btn" title="推しを選び直す"><span>⟲</span><span class="fan-label">選び直す</span></button>
-    <button id="debug-btn" class="fan-btn" title="デバッグログ"><span>🐛</span><span class="fan-label">ログ</span></button>
+    <button id="reticle-btn" class="fan-btn" title="配置/再配置"><span class="icon-svg" data-icon="target"></span><span class="fan-label">位置</span></button>
+    <button id="shadow-adjust-btn" class="fan-btn" title="影の向き・長さ調整"><span class="icon-svg" data-icon="shadow"></span><span class="fan-label">影</span></button>
+    <button id="timer-btn" class="fan-btn" title="セルフタイマー"><span class="icon-svg" data-icon="timer"></span><span class="fan-label">タイマー</span></button>
+    <button id="mode-btn" class="fan-btn" title="写真/動画 切替"><span class="mode-chip-fan icon-svg" data-icon="camera"></span><span class="fan-label">写真</span></button>
+    <button id="reset-btn" class="fan-btn" title="推しを選び直す"><span class="icon-svg" data-icon="reset"></span><span class="fan-label">選び直す</span></button>
+    <button id="debug-btn" class="fan-btn" title="デバッグログ"><span class="icon-svg" data-icon="log"></span><span class="fan-label">ログ</span></button>
   </div>
 
   <div id="bottom-controls">
@@ -147,13 +163,13 @@ document.getElementById('oshi-icon').href=png;
 <div id="shadow-panel">
   <div class="shadow-panel-head">
     <span>影の向き・長さ</span>
-    <button id="shadow-panel-close" class="dock-arrow" style="width:26px;height:26px;font-size:13px">✕</button>
+    <button id="shadow-panel-close" class="dock-arrow" style="width:26px;height:26px;font-size:13px"><span class="icon-svg" data-icon="close"></span></button>
   </div>
   <p class="shadow-panel-sub">パッドの中で指を動かすだけで、影の向きと長さを同時に調整できます。</p>
   <div class="shadow-dial-wrap">
     <div class="shadow-dial disabled" id="shadow-dial">
       <div class="shadow-dial-center"></div>
-      <div class="shadow-dial-handle" id="shadow-dial-handle">☀</div>
+      <div class="shadow-dial-handle" id="shadow-dial-handle"><span class="icon-svg" data-icon="sun"></span></div>
       <span class="shadow-dial-label n">0°</span>
     </div>
   </div>

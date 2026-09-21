@@ -1,5 +1,5 @@
 /* ============================================================
-   style.css — OshiCamera UI v3「Halo」
+   style.css — AlongScene UI v3「Halo」
    ------------------------------------------------------------
    ADR-016参照。v2「The Void」(ADR-015)がミニマルさを追求しすぎて
    「操作がわかりにくい」というフィードバックに繋がったため、以下の
@@ -43,6 +43,79 @@
   --theme:     var(--gold); /* 選択画面でキャラクターごとに上書きされる */
   --safe-t:    env(safe-area-inset-top, 0px);
   --safe-b:    env(safe-area-inset-bottom, 0px);
+
+  /* ADR-017: リキッドグラス用トークン。既存の --glass 系は互換のため残し、
+     単なる半透明+ぼかしから「本物のガラス」の質感(彩度・上端ハイライト・
+     縁の屈折線・二重影)を足すための変数をここに追加する。 */
+  --glass-blur: 22px;
+  --glass-sat:  170%;
+  /* 上端の specular highlight。radial-gradientで弧状の反射光を作る。 */
+  --glass-spec: radial-gradient(120% 60% at 30% -10%, rgba(255,255,255,.55), rgba(255,255,255,0) 60%);
+  /* 縁の屈折線。上は明るく、下へいくほど沈む(ガラスの厚みの表現)。 */
+  --glass-edge-top: rgba(255,255,255,.55);
+  --glass-edge-bottom: rgba(255,255,255,.06);
+  /* 浮遊感を出す二重影(近い柔らかい影+遠い沈み込む影)。 */
+  --glass-shadow: 0 2px 8px rgba(0,0,0,.28), 0 14px 34px -12px rgba(0,0,0,.55);
+}
+
+/* ===============================================================
+   ADR-017: リキッドグラスの共通レイヤー
+   ------------------------------------------------------------
+   単純なblur+半透明ではなく、①上端の specular highlight(::before、
+   mix-blend-mode:overlayで弧状の反射光を重ねる)②縁の屈折線
+   (::after、mask-compositeで1pxのグラデーションリングを作る)の
+   2層を、主要なガラス面のセレクタへまとめて適用する。
+   HTML側にclassを追加する必要はない(既存セレクタへ直接効かせる)。
+
+   isolation:isolateは各セレクタの本体側で個別に付与済み(mix-blend-mode
+   が、背後のカメラ映像や3Dキャンバスまで巻き込んでしまわないようにする
+   ための必須設定)。pointer-events:noneで操作を奪わないようにしている。
+   =============================================================== */
+.badge-core::before,
+#placement-intro-text::before,
+#placement-distance-badge::before,
+#placement-cancel-btn::before,
+#dock-toggle::before,
+.fan-btn::before,
+.pose-ring-row::before,
+#ring-label::before,
+#shutter-status::before,
+#pose-toast::before,
+#shadow-panel::before,
+#point-adjust-panel::before {
+  content: '';
+  position: absolute; inset: 0; border-radius: inherit;
+  background: var(--glass-spec);
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+.badge-core::after,
+#placement-intro-text::after,
+#placement-distance-badge::after,
+#placement-cancel-btn::after,
+#dock-toggle::after,
+.fan-btn::after,
+.pose-ring-row::after,
+#ring-label::after,
+#shutter-status::after,
+#pose-toast::after,
+#shadow-panel::after,
+#point-adjust-panel::after {
+  content: '';
+  position: absolute; inset: 0; border-radius: inherit; padding: 1px;
+  background: linear-gradient(180deg, var(--glass-edge-top), var(--glass-edge-bottom));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+/* 角丸ではなく上下左右で角丸が異なる要素(#placement-intro-text等)は
+   border-radiusがそれぞれ個別指定なのでinheritで自動的に揃う。
+   ボタン押下時、ハイライトがわずかに沈み込むことで「押した感」を足す。 */
+.fan-btn:active::before,
+#dock-toggle:active::before,
+#placement-cancel-btn:active::before {
+  opacity: .6;
 }
 
 html, body {
@@ -134,10 +207,10 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 }
 .badge-ring { position: absolute; inset: 0; border-radius: 50%; border: 1.5px solid rgba(255,255,255,.18); box-shadow: 0 0 40px -4px var(--theme); }
 .badge-core {
-  position: relative; width: 112px; height: 112px; border-radius: 50%;
+  position: relative; isolation: isolate; width: 112px; height: 112px; border-radius: 50%;
   background: radial-gradient(circle at 32% 28%, rgba(255,255,255,.14), rgba(255,255,255,0) 60%), var(--glass);
   border: 1px solid var(--line); display: flex; align-items: center; justify-content: center;
-  font-size: 50px; backdrop-filter: blur(10px);
+  font-size: 50px; -webkit-backdrop-filter: blur(10px) saturate(var(--glass-sat)); backdrop-filter: blur(10px) saturate(var(--glass-sat));
   animation: breathe 3.6s ease-in-out infinite;
 }
 @keyframes breathe { 0%,100% { transform: scale(1); } 50% { transform: scale(1.035); } }
@@ -212,19 +285,46 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 }
 #placement-intro.show { display: block; animation: fadeUp .3s ease-out; }
 #placement-intro-text {
-  background: var(--glass); backdrop-filter: blur(18px); border: 1px solid var(--line);
+  position: relative; isolation: isolate;
+  background: var(--glass); -webkit-backdrop-filter: blur(18px) saturate(var(--glass-sat)); backdrop-filter: blur(18px) saturate(var(--glass-sat)); border: 1px solid var(--line);
   color: var(--ink); font-size: 13px; line-height: 1.8; text-align: center; font-weight: 300;
-  padding: 14px 22px; border-radius: 18px;
+  padding: 14px 22px; border-radius: 18px 18px 4px 4px;
 }
-#placement-confirm-btn {
+/* ドラッグ中の距離を数値で常時提示する(ADR-017: 勘だけで置く問題への対処)。
+   説明テキストの直下に接続する形で、視線移動が少なくて済むようにする。 */
+#placement-distance-badge {
+  position: relative; isolation: isolate;
+  background: rgba(10,10,15,.82); -webkit-backdrop-filter: blur(14px) saturate(var(--glass-sat)); backdrop-filter: blur(14px) saturate(var(--glass-sat)); border: 1px solid var(--gold-line);
+  border-top: none; color: var(--gold); font-size: 12px; font-weight: 600; letter-spacing: .03em;
+  text-align: center; padding: 6px 22px 7px; border-radius: 4px 4px 14px 14px;
+  font-variant-numeric: tabular-nums;
+}
+#placement-distance-val { font-size: 14px; margin-right: 1px; }
+
+#placement-actions {
   display: none; position: fixed; left: 50%; transform: translateX(-50%);
   bottom: calc(var(--safe-b) + 118px); z-index: 49;
+  gap: 12px; align-items: center;
+}
+#placement-actions.show { display: flex; animation: popIn .25s ease-out; }
+#placement-confirm-btn {
   appearance: none; border: 1px solid var(--gold); border-radius: 999px;
   padding: 14px 34px; font-size: 13px; font-weight: 600; letter-spacing: .06em;
   background: var(--gold); color: #1a1408; cursor: pointer;
 }
-#placement-confirm-btn.show { display: block; animation: popIn .25s ease-out; }
-#placement-confirm-btn:active { transform: translateX(-50%) scale(.95); }
+#placement-confirm-btn:active { transform: scale(.95); }
+/* 再配置時のみ表示(初回設置は必須ステップなのでキャンセル不可のまま維持)。
+   ADR-017: これまでドック経由の🎯再タップでしかキャンセルできず、かつ
+   タップ直後にドックが自動で閉じて事実上押せなかった問題への対処。
+   常時ヒットできる独立ボタンとして常駐させる。 */
+#placement-cancel-btn {
+  position: relative; isolation: isolate;
+  display: none; appearance: none; border: 1px solid var(--line); border-radius: 999px;
+  padding: 14px 24px; font-size: 13px; font-weight: 500; letter-spacing: .04em;
+  background: var(--glass); -webkit-backdrop-filter: blur(14px) saturate(var(--glass-sat)); backdrop-filter: blur(14px) saturate(var(--glass-sat)); color: var(--ink-faint); cursor: pointer;
+}
+#placement-cancel-btn.show { display: block; }
+#placement-cancel-btn:active { transform: scale(.95); }
 
 /* ===== UI層 ===== */
 #ui-layer { position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; justify-content: space-between; pointer-events: none; }
@@ -241,9 +341,10 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 }
 
 #dock-toggle {
+  position: relative; isolation: isolate;
   pointer-events: auto;
   width: 40px; height: 40px; border-radius: 50%;
-  background: var(--glass); backdrop-filter: blur(14px);
+  background: var(--glass); -webkit-backdrop-filter: blur(14px) saturate(var(--glass-sat)); backdrop-filter: blur(14px) saturate(var(--glass-sat));
   border: 1px solid var(--line); color: var(--ink-dim);
   display: flex; align-items: center; justify-content: center;
   transition: background .15s, color .15s, transform .1s, border-color .15s;
@@ -264,10 +365,10 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   position: fixed; top: calc(var(--safe-t) + 34px); right: 38px; z-index: 52;
 }
 .fan-btn {
-  pointer-events: none;
+  pointer-events: none; isolation: isolate;
   position: absolute; top: 0; right: 0;
   width: 46px; height: 46px; border-radius: 50%;
-  background: var(--glass); backdrop-filter: blur(16px);
+  background: var(--glass); -webkit-backdrop-filter: blur(16px) saturate(var(--glass-sat)); backdrop-filter: blur(16px) saturate(var(--glass-sat));
   border: 1px solid var(--line); color: var(--ink);
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
   font-size: 16px; line-height: 1;
@@ -275,6 +376,7 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   transition: opacity .22s ease-out, transform .22s cubic-bezier(.34,1.56,.64,1), background .15s, border-color .15s;
 }
 .fan-btn .fan-label { font-size: 8px; letter-spacing: .02em; font-weight: 600; color: var(--ink-faint); }
+.fan-btn .icon-svg { width: 18px; height: 18px; }
 .fan-btn.active { color: var(--gold); border-color: var(--gold-line); background: var(--gold-soft); }
 .fan-btn.active .fan-label { color: var(--gold); }
 .fan-btn:active { transform: translate(var(--fx), var(--fy)) scale(.88) !important; }
@@ -288,7 +390,10 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 .fan-btn:nth-child(6) { --fx: 0px;    --fy: 112px;   transition-delay: .125s; }
 #top-dock:not(.open) .fan-btn { transition-delay: 0s !important; }
 
-.mode-chip-fan { font-size: 15px; }
+/* ADR-017: icons.jsが差し込むSVGアイコンの共通ベース(サイズは置き場所側で上書き)。
+   絵文字時代はfont-sizeで制御していたが、SVGなのでwidth/heightで統一する。 */
+.icon-svg { display: inline-flex; width: 16px; height: 16px; flex-shrink: 0; }
+.icon-svg svg { width: 100%; height: 100%; display: block; }
 
 /* ===== フラッシュ / カウントダウン ===== */
 #flash-overlay { position: fixed; inset: 0; z-index: 260; background: #fff; opacity: 0; pointer-events: none; }
@@ -320,8 +425,9 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
    「表情がどこにあるか分からない」という声を受けて常時両方見せる形にした) --- */
 #pose-rings { display: flex; flex-direction: column; gap: 8px; align-items: center; }
 .pose-ring-row {
+  position: relative; isolation: isolate;
   display: flex; align-items: center; gap: 2px;
-  background: var(--glass); backdrop-filter: blur(18px);
+  background: var(--glass); -webkit-backdrop-filter: blur(18px) saturate(var(--glass-sat)); backdrop-filter: blur(18px) saturate(var(--glass-sat));
   border: 1px solid var(--line); border-radius: 999px;
   padding: 6px 10px;
 }
@@ -351,10 +457,10 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 .dock-dots span.active { background: var(--gold); transform: scale(1.4); }
 
 #ring-label {
-  position: fixed; left: 50%; transform: translateX(-50%) translateY(6px);
+  position: fixed; isolation: isolate; left: 50%; transform: translateX(-50%) translateY(6px);
   bottom: calc(var(--safe-b) + 186px); z-index: 47;
   font-size: 12.5px; font-weight: 400; letter-spacing: .04em; color: var(--ink);
-  background: var(--glass); backdrop-filter: blur(14px); border: 1px solid var(--line);
+  background: var(--glass); -webkit-backdrop-filter: blur(14px) saturate(var(--glass-sat)); backdrop-filter: blur(14px) saturate(var(--glass-sat)); border: 1px solid var(--line);
   padding: 7px 16px; border-radius: 999px; white-space: nowrap;
   opacity: 0; transition: opacity .18s, transform .18s; pointer-events: none;
 }
@@ -363,7 +469,8 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 /* --- 呼吸するオーブ(シャッター)＋回る光の輪 --- */
 #bottom-bar { display: flex; flex-direction: column; align-items: center; gap: 12px; pointer-events: none; }
 #shutter-status {
-  font-size: 11px; color: var(--gold); background: var(--glass); backdrop-filter: blur(10px);
+  position: relative; isolation: isolate;
+  font-size: 11px; color: var(--gold); background: var(--glass); -webkit-backdrop-filter: blur(10px) saturate(var(--glass-sat)); backdrop-filter: blur(10px) saturate(var(--glass-sat));
   padding: 5px 14px; border-radius: 999px; letter-spacing: .04em; border: 1px solid var(--line);
   opacity: 0; transition: opacity .15s;
 }
@@ -467,8 +574,8 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 
 /* ===== トースト ===== */
 #pose-toast {
-  position: fixed; top: calc(var(--safe-t) + 70px); left: 50%; transform: translateX(-50%) translateY(-8px);
-  background: var(--glass); backdrop-filter: blur(16px); color: var(--ink);
+  position: fixed; isolation: isolate; top: calc(var(--safe-t) + 70px); left: 50%; transform: translateX(-50%) translateY(-8px);
+  background: var(--glass); -webkit-backdrop-filter: blur(16px) saturate(var(--glass-sat)); backdrop-filter: blur(16px) saturate(var(--glass-sat)); color: var(--ink);
   padding: 8px 18px; border-radius: 999px; font-size: 12.5px; letter-spacing: .03em;
   border: 1px solid var(--line);
   z-index: 260; opacity: 0; pointer-events: none; transition: opacity .15s, transform .15s;
@@ -484,9 +591,9 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
    どちらかへ寄せれば重なりにくい)。
    =============================================================== */
 #shadow-panel {
-  display: none; position: fixed; right: 14px; top: 50%; transform: translateY(-50%);
+  display: none; position: fixed; isolation: isolate; right: 14px; top: 50%; transform: translateY(-50%);
   z-index: 250; width: min(280px, calc(100vw - 24px));
-  background: rgba(10,10,15,.94); backdrop-filter: blur(22px);
+  background: rgba(10,10,15,.94); -webkit-backdrop-filter: blur(22px) saturate(var(--glass-sat)); backdrop-filter: blur(22px) saturate(var(--glass-sat));
   border: 1px solid var(--line); border-radius: 24px;
   padding: 18px 20px;
   max-height: calc(100vh - var(--safe-t) - var(--safe-b) - 40px);
@@ -542,9 +649,9 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
    main.js側で.showクラスを付与して表示する。
    =============================================================== */
 #point-adjust-panel {
-  display: none; position: fixed; left: 14px; top: 50%; transform: translateY(-50%);
+  display: none; position: fixed; isolation: isolate; left: 14px; top: 50%; transform: translateY(-50%);
   z-index: 250; width: min(220px, calc(100vw - 24px));
-  background: rgba(10,10,15,.94); backdrop-filter: blur(22px);
+  background: rgba(10,10,15,.94); -webkit-backdrop-filter: blur(22px) saturate(var(--glass-sat)); backdrop-filter: blur(22px) saturate(var(--glass-sat));
   border: 1px solid var(--line); border-radius: 20px;
   padding: 16px 18px;
 }
@@ -557,13 +664,29 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 /* ===== 共有クラス(ポーズ調整パネル等、dev.htmlでも流用) ===== */
 .pose-panel-head { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 600; margin-bottom: 12px; color: var(--gold); letter-spacing: .04em; }
 .pose-panel-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-.pose-panel-row label { font-size: 11.5px; color: var(--ink-dim); width: 18px; flex-shrink: 0; }
+.pose-panel-row label { font-size: 11.5px; color: var(--ink-dim); width: 28px; flex-shrink: 0; }
 .pose-panel-row select {
   flex: 1; background: var(--glass-hi); color: var(--ink); border: 1px solid var(--line);
   border-radius: 8px; padding: 7px 9px; font-size: 12.5px;
 }
+/* ADR-017: ボーン検索欄(dev.js専用、tune-bone-search)。selectと見た目を揃える。 */
+#tune-bone-search {
+  flex: 1; background: var(--glass-hi); color: var(--ink); border: 1px solid var(--line);
+  border-radius: 8px; padding: 7px 9px; font-size: 12.5px; font-family: inherit;
+}
+#tune-bone-search::placeholder { color: var(--ink-faint); }
+/* ADR-017: 選択中ボーンのみを初期値へ戻す小さな丸ボタン。selectの右に添える。 */
+#tune-bone-reset-btn {
+  flex-shrink: 0; width: 30px; height: 30px; border-radius: 8px;
+  background: var(--glass-hi); border: 1px solid var(--line); color: var(--ink-dim);
+  font-size: 14px; line-height: 1; cursor: pointer;
+}
+#tune-bone-reset-btn:disabled { opacity: .35; cursor: default; }
+#tune-bone-reset-btn:not(:disabled):active { background: var(--glass); color: var(--gold); }
 .slider-row input[type="range"] { flex: 1; accent-color: var(--gold); }
-.slider-row span { width: 34px; text-align: right; font-size: 11.5px; color: var(--gold); }
+.slider-row span { width: 34px; text-align: right; font-size: 11.5px; color: var(--gold); transition: color .15s; }
+/* ADR-017: 初期値から動かした軸を金色に強調する(createPoseTuner.loadSlidersが付与)。 */
+.slider-row span.tune-val-changed { color: var(--gold); font-weight: 700; text-shadow: 0 0 8px var(--gold-soft); }
 .pose-panel-actions { display: flex; gap: 8px; margin-top: 10px; }
 .pose-panel-actions button {
   flex: 1; padding: 10px; border-radius: 10px; font-size: 12px;
@@ -571,6 +694,20 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 }
 .pose-panel-actions button:active { background: var(--glass); }
 .pose-panel-hint { font-size: 10.5px; color: var(--ink-faint); margin-top: 8px; min-height: 13px; font-weight: 300; }
+.dev-tune-note kbd {
+  display: inline-block; padding: 1px 5px; border-radius: 4px; margin: 0 1px;
+  background: var(--glass-hi); border: 1px solid var(--line); font-size: 9.5px; color: var(--ink);
+}
+/* ADR-017: プリセット行のボタンは全角1〜2文字程度なので、他の行のように
+   flex:1で伸ばさず、選択肢のselectだけを伸ばして残りは内容幅に留める。 */
+#tune-preset-row select { flex: 1; }
+#tune-preset-row button {
+  flex-shrink: 0; padding: 7px 10px; border-radius: 8px; font-size: 11.5px;
+  background: var(--glass-hi); border: 1px solid var(--line); color: var(--ink); cursor: pointer;
+}
+#tune-preset-row button:active { background: var(--glass); }
+#tune-preset-apply-btn:not(:disabled):active, #tune-preset-delete-btn:not(:disabled):active { color: var(--gold); }
+#tune-preset-row button:disabled { opacity: .35; cursor: default; }
 
 /* ===== アクセシビリティの底床 ===== */
 button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }

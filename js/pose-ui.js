@@ -45,6 +45,7 @@ export function buildPoseBar(poseBar, def, getCharacter, onSelect, onPoseChange)
   Object.entries(def.poses).forEach(([key, preset]) => {
     const btn = document.createElement('button');
     btn.className = 'pose-btn' + (key === 'standing' ? ' active' : '');
+    btn.dataset.poseKey = key;
     btn.textContent = preset.emoji;
     btn.title = preset.label;
     btn.addEventListener('click', () => {
@@ -63,11 +64,55 @@ export function buildPoseBar(poseBar, def, getCharacter, onSelect, onPoseChange)
 
 /**
  * ポーズ調整パネル(ボーン選択+X/Y/Zスライダー+JSONコピー)の共通ロジック。
- * @param {object} els DOM要素一式 { select, xSlider, ySlider, zSlider, xVal, yVal, zVal, hint }
+ * @param {object} els DOM要素一式 { select, xSlider, ySlider, zSlider, xVal, yVal, zVal, hint,
+ *   search?, boneResetBtn? } search/boneResetBtnはdev.js専用の追加UI(ADR-017)。
+ *   未指定でも従来通り動く(オプショナル)。
  * @param {() => object|null} getCharacter 現在のキャラクターインスタンスを返す関数
  */
 export function createPoseTuner(els, getCharacter) {
-  const { select, xSlider, ySlider, zSlider, xVal, yVal, zVal, hint } = els;
+  const { select, xSlider, ySlider, zSlider, xVal, yVal, zVal, hint, search, boneResetBtn } = els;
+  // ADR-017: 検索欄で絞り込んでも「今どのボーンを触っているか」を保持するため、
+  // <select>のoptionを毎回作り直すrefresh()とは別に、フルネームの一覧を保持する。
+  let allBoneNames = [];
+
+  // 値がプリセット既定値からどれだけ動いているかの判定しきい値(度)。
+  // 浮動小数の誤差程度では「変更あり」と誤判定しないための遊び。
+  const CHANGED_EPS = 0.05;
+
+  function isBoneChanged(character, name) {
+    if (!character || !character.presetBoneValues) return false;
+    const base = character.presetBoneValues[name] || [0, 0, 0];
+    const cur = character.poseTargets[name] || [0, 0, 0];
+    return Math.abs(cur[0] - base[0]) > CHANGED_EPS ||
+           Math.abs(cur[1] - base[1]) > CHANGED_EPS ||
+           Math.abs(cur[2] - base[2]) > CHANGED_EPS;
+  }
+
+  /** <select>のoption一覧に、変更済みボーンの目印(●)を付けて再構築する。 */
+  function renderOptions(filterText = '') {
+    const character = getCharacter();
+    const prevValue = select.value;
+    select.innerHTML = '';
+    const needle = filterText.trim().toLowerCase();
+    const visible = needle
+      ? allBoneNames.filter((n) => n.toLowerCase().includes(needle))
+      : allBoneNames;
+    if (visible.length === 0) {
+      const opt = document.createElement('option');
+      opt.textContent = needle ? '(一致するボーンがありません)' : '(このポーズには調整可能なボーンがありません)';
+      opt.disabled = true;
+      select.appendChild(opt);
+      return;
+    }
+    visible.forEach((name) => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = (character && isBoneChanged(character, name) ? '● ' : '') + name;
+      select.appendChild(opt);
+    });
+    // 絞り込み後も、直前に選んでいたボーンが結果に残っていればそれを維持する。
+    if (visible.includes(prevValue)) select.value = prevValue;
+  }
 
   function loadSliders(name) {
     const character = getCharacter();
@@ -77,28 +122,25 @@ export function createPoseTuner(els, getCharacter) {
     xVal.textContent = Math.round(v[0]);
     yVal.textContent = Math.round(v[1]);
     zVal.textContent = Math.round(v[2]);
+    const changed = isBoneChanged(character, name);
+    [xVal, yVal, zVal].forEach((el) => el.classList.toggle('tune-val-changed', changed));
+    if (boneResetBtn) boneResetBtn.disabled = !changed;
   }
 
   function refresh() {
     const character = getCharacter();
-    select.innerHTML = '';
-    if (!character) return;
-    const names = character.getCurrentPoseBoneNames();
-    if (names.length === 0) {
-      const opt = document.createElement('option');
-      opt.textContent = '(このポーズには調整可能なボーンがありません)';
-      select.appendChild(opt);
+    if (!character) { select.innerHTML = ''; return; }
+    allBoneNames = character.getCurrentPoseBoneNames();
+    if (search) search.value = '';
+    if (allBoneNames.length === 0) {
+      renderOptions();
       xSlider.disabled = ySlider.disabled = zSlider.disabled = true;
+      if (boneResetBtn) boneResetBtn.disabled = true;
       return;
     }
     xSlider.disabled = ySlider.disabled = zSlider.disabled = false;
-    names.forEach((name) => {
-      const opt = document.createElement('option');
-      opt.value = name;
-      opt.textContent = name;
-      select.appendChild(opt);
-    });
-    loadSliders(names[0]);
+    renderOptions();
+    loadSliders(allBoneNames[0]);
   }
 
   function onSliderInput() {
@@ -111,11 +153,19 @@ export function createPoseTuner(els, getCharacter) {
     xVal.textContent = Math.round(xyz[0]);
     yVal.textContent = Math.round(xyz[1]);
     zVal.textContent = Math.round(xyz[2]);
+    const changed = isBoneChanged(character, name);
+    [xVal, yVal, zVal].forEach((el) => el.classList.toggle('tune-val-changed', changed));
+    if (boneResetBtn) boneResetBtn.disabled = !changed;
+    // 一覧の●マークは値確定のたびに軽く同期しておく(選択自体は保持される)。
+    renderOptions(search ? search.value : '');
   }
   xSlider.addEventListener('input', onSliderInput);
   ySlider.addEventListener('input', onSliderInput);
   zSlider.addEventListener('input', onSliderInput);
   select.addEventListener('change', () => loadSliders(select.value));
+  if (search) {
+    search.addEventListener('input', () => renderOptions(search.value));
+  }
 
   function showHint(text, ms = 1500) {
     if (!hint) return;
@@ -128,28 +178,59 @@ export function createPoseTuner(els, getCharacter) {
     if (!character) return;
     character.resetPoseToDefault();
     loadSliders(select.value);
+    renderOptions(search ? search.value : '');
     showHint('初期値に戻しました');
+  }
+
+  /** ADR-017新規: 選択中の1ボーンだけを既定値へ戻す(全体リセットより手軽な微修正用)。 */
+  function resetSelectedBone() {
+    const character = getCharacter();
+    if (!character) return;
+    const name = select.value;
+    if (!name || !character.presetBoneValues) return;
+    const base = character.presetBoneValues[name] || [0, 0, 0];
+    character.setBoneDelta(name, base);
+    loadSliders(name);
+    renderOptions(search ? search.value : '');
+    showHint(`${name} を初期値に戻しました`);
+  }
+  if (boneResetBtn) boneResetBtn.addEventListener('click', resetSelectedBone);
+
+  /**
+   * ADR-017: 全ボーンではなく「既定値から動かしたボーンだけ」を出力する。
+   * 差分のみになることで、Claudeへ貼り付ける際のノイズを減らす。
+   */
+  function buildDiffObject() {
+    const character = getCharacter();
+    if (!character) return {};
+    const names = character.getCurrentPoseBoneNames();
+    const obj = {};
+    names.forEach((n) => {
+      if (!isBoneChanged(character, n)) return;
+      const v = character.poseTargets[n] || [0, 0, 0];
+      obj[n] = v.map((x) => Math.round(x * 10) / 10);
+    });
+    return obj;
   }
 
   async function copyJSON() {
     const character = getCharacter();
     if (!character) return;
-    const names = character.getCurrentPoseBoneNames();
-    const obj = {};
-    names.forEach((n) => {
-      const v = character.poseTargets[n] || [0, 0, 0];
-      obj[n] = v.map((x) => Math.round(x * 10) / 10);
-    });
+    const obj = buildDiffObject();
+    if (Object.keys(obj).length === 0) {
+      showHint('既定値から変更したボーンがありません');
+      return;
+    }
     const json = JSON.stringify(obj, null, 2);
     try {
       await navigator.clipboard.writeText(json);
-      showHint('コピーしました。Claudeに貼り付けて送ってください');
+      showHint('差分をコピーしました。Claudeに貼り付けて送ってください');
     } catch (e) {
-      window.prompt('コピーしてClaudeに送ってください:', json);
+      window.prompt('コピーしてClaudeに送ってください(既定値からの差分のみ):', json);
     }
   }
 
-  return { refresh, loadSliders, resetToDefault, copyJSON };
+  return { refresh, loadSliders, resetToDefault, resetSelectedBone, copyJSON, buildDiffObject, isBoneChanged };
 }
 
 /**

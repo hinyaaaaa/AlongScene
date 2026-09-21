@@ -15,6 +15,12 @@ import { PlacementReticle } from './js/placement-reticle.js';
 import { computePerceptualScaleFactor } from './js/perceptual-scale.js';
 import { createCompassCalibration } from './js/compass-calibration.js';
 import { looksLikeOutdoorSky } from './js/shadow/environment-shadow.js';
+import { ICONS, injectIcons } from './js/icons.js';
+
+// ADR-017: 絵文字アイコンを自作の線画SVGへ置き換え。DOM解析後(モジュール
+// スクリプトはdeferと同等)すぐに一括差し込みする。動的に切り替わる
+// アイコン(撮影モードのカメラ/動画)は各所でICONSを直接参照する。
+injectIcons();
 
 let currentCharacterIndex = 0;
 
@@ -326,18 +332,23 @@ function buildPoseRing(def) {
 
 /* ============================================================
    配置の反映
+   ------------------------------------------------------------
+   ADR-017: ドラッグ中のライブプレビュー(previewPlacementAt)から
+   確定前のplacement本体を書き換えずに呼べるよう、実処理を
+   applyPlacementCore(p)として切り出した。applyPlacement()は
+   従来通り確定済みのplacementに対して呼ぶ薄いラッパーとして残す。
    ============================================================ */
-function applyPlacement() {
+function applyPlacementCore(p) {
   if (!activeCharacter) return;
 
-  const distanceFromCam = Math.abs(placement.z - camera.position.z);
+  const distanceFromCam = Math.abs(p.z - camera.position.z);
 
   // 20260722平面推定指示書 Part7/Part8: 知覚スケール補正はあくまで演出。
-  // placement.scale自体は書き換えず、setTransformへ渡す直前でのみ
+  // p.scale自体は書き換えず、setTransformへ渡す直前でのみ
   // 乗算する(ピンチ拡縮・キャラクター設定・将来の保存データに
   // 補正が混入しないようにするため)。
   const perceptualFactor = computePerceptualScaleFactor(distanceFromCam);
-  activeCharacter.setTransform({ ...placement, scale: placement.scale * perceptualFactor });
+  activeCharacter.setTransform({ ...p, scale: p.scale * perceptualFactor });
 
   const footY = activeCharacter.getFootY();
   const width = activeCharacter.getWidth();
@@ -391,7 +402,7 @@ function applyPlacement() {
   }
 
   shadowRig.update(
-    footY, width, placement,
+    footY, width, p,
     lightAzimuthDeg,
     environmentLighting.getBrightnessFactor(),
     distanceFromCam,
@@ -401,6 +412,12 @@ function applyPlacement() {
   );
   applyAtmosphericPerspective(activeCharacter.root, distanceFromCam);
 }
+
+/** 確定済みのplacementに対してapplyPlacementCoreを呼ぶ、従来互換の薄いラッパー。 */
+function applyPlacement() {
+  applyPlacementCore(placement);
+}
+
 
 /* ============================================================
    配置レティクル(20260722平面推定指示書 Part5/6 + 07/27再設計)
@@ -422,12 +439,50 @@ function applyPlacement() {
    一時的に隠すようにした(showReticleAt/endPlacementMode参照)。
    ============================================================ */
 const placementConfirmBtn = document.getElementById('placement-confirm-btn');
+const placementCancelBtn  = document.getElementById('placement-cancel-btn');
+const placementActions    = document.getElementById('placement-actions');
+const placementDistanceVal = document.getElementById('placement-distance-val');
+
+// ADR-017: ドラッグ確定前に「取り消して元の位置へ戻せる」よう、
+// 再配置モードに入る直前のplacementを退避しておく(初回設置は
+// そもそもキャンセル不可なのでnullのままでよい)。
+let placementSnapshot = null;
+
+/** カメラからの距離(m)をバッジへ反映する。 */
+function updateDistanceBadge(zWorld) {
+  const distanceM = Math.abs(zWorld - camera.position.z);
+  placementDistanceVal.textContent = distanceM.toFixed(1);
+}
 
 /** レティクルを指定のワールドXZへ、現在の仮想床の高さで表示する。 */
 function showReticleAt(x, z) {
-  placementReticle.setWorldPosition(x, groundEstimator.getGroundHeight(), z);
+  const y = groundEstimator.getGroundHeight();
+  placementReticle.setWorldPosition(x, y, z);
   placementReticle.show();
   placementConfirmBtn.classList.add('show');
+  placementActions.classList.add('show');
+  updateDistanceBadge(z);
+  // ADR-017: 確定前でも実際にキャラクターがそこに立った見た目を
+  // その場で確認できるよう、レティクルと同時にキャラクターも
+  // プレビュー移動させる(「置いてから確認」→「見ながら置く」)。
+  previewPlacementAt(x, y, z);
+}
+
+/**
+ * ドラッグ中のライブプレビュー。確定前のplacement本体は一切書き換えず
+ * (キャンセル時に元へ戻せることを保証するため)、レンダリング用の
+ * 一時オブジェクトをapplyPlacementCoreへ渡すだけに留める。
+ *
+ * 初回設置(pendingInitialPlacement)中は適用しない: loadCharacter内の
+ * コメント通り「初回設置が確定するまでキャラクター自体は非表示にして
+ * おく」のは意図的な演出(確定した瞬間に初めて姿を見せる)であり、
+ * ここでのライブプレビューはその意図を壊してしまうため。
+ * 既にキャラクターが見えている再配置時のみ、確定前から追従させる。
+ */
+function previewPlacementAt(x, y, z) {
+  if (!activeCharacter || pendingInitialPlacement) return;
+  activeCharacter.root.visible = true;
+  applyPlacementCore({ ...placement, x, y, z });
 }
 
 /** 配置モード/初回設置モードを終える共通処理。 */
@@ -436,9 +491,12 @@ function endPlacementMode() {
   pendingInitialPlacement = false;
   placementReticle.hide();
   placementConfirmBtn.classList.remove('show');
+  placementCancelBtn.classList.remove('show');
+  placementActions.classList.remove('show');
   reticleBtn.classList.remove('active');
   uiLayer.classList.remove('placement-pending');
   placementIntro.classList.remove('show');
+  placementSnapshot = null;
 }
 
 /**
@@ -462,23 +520,36 @@ function confirmReticlePlacement() {
   showPoseToast(wasInitial ? 'この場所に配置しました' : '位置を更新しました');
 }
 
+/**
+ * ADR-017新規: 再配置を確定せずに元の位置へ戻して終える。
+ * 初回設置中はボタン自体を表示しないため、ここに来るのは
+ * 常に「既に配置済みのキャラクターを再配置しようとした」ケースのみ。
+ */
+function cancelReticlePlacement() {
+  if (placementSnapshot) {
+    Object.assign(placement, placementSnapshot);
+    applyPlacement();
+  }
+  endPlacementMode();
+  showPoseToast('位置の変更をキャンセルしました');
+}
+
 placementConfirmBtn.addEventListener('click', confirmReticlePlacement);
+placementCancelBtn.addEventListener('click', cancelReticlePlacement);
 
 reticleBtn.addEventListener('click', () => {
-  if (!activeCharacter || pendingInitialPlacement) return;
-  if (!placementMode) {
-    placementMode = true;
-    reticleBtn.classList.add('active');
-    // 位置の設定/再設定中はポーズ/表情リング等を一時的に隠し、
-    // 配置操作に集中できるようにする(2026/08追加)。
-    uiLayer.classList.add('placement-pending');
-    showReticleAt(placement.x, placement.z);
-    showPoseToast('円をドラッグして位置を決め、「ここに配置」を押してください');
-  } else {
-    // 再配置モード中の2回目の🎯タップは「確定せずキャンセル」とする
-    // (確定は専用ボタンのみで行う、誤タップでの意図しない確定を防ぐ)。
-    endPlacementMode();
-  }
+  if (!activeCharacter || pendingInitialPlacement || placementMode) return;
+  placementMode = true;
+  reticleBtn.classList.add('active');
+  // 位置の設定/再設定中はポーズ/表情リング等を一時的に隠し、
+  // 配置操作に集中できるようにする(2026/08追加)。
+  uiLayer.classList.add('placement-pending');
+  placementSnapshot = { x: placement.x, y: placement.y, z: placement.z };
+  showReticleAt(placement.x, placement.z);
+  // ADR-017: 常駐の案内パネル(placement-intro)を再配置でも出すことで、
+  // 一度きりのトーストで消えていた操作説明を配置中ずっと見られるようにした。
+  placementIntro.classList.add('show');
+  placementCancelBtn.classList.add('show');
 });
 
 /**
@@ -486,6 +557,7 @@ reticleBtn.addEventListener('click', () => {
  * (Pokémon GO/IKEA Place等)を参考に、「まず円で立つ位置を決めてから
  * メインUIが使えるようになる」導入フローにした。キャラクター・
  * メインUIは隠したまま、レティクルと案内バナー・確定ボタンだけを表示する。
+ * (キャンセル不可: placementCancelBtnはshowされないため常に非表示のまま)
  */
 function beginInitialPlacement() {
   pendingInitialPlacement = true;
@@ -740,7 +812,12 @@ stage.addEventListener('touchmove', (e) => {
         MIN_CHARACTER_DISTANCE_Z,
         MAX_CHARACTER_DISTANCE_Z
       );
-      placementReticle.setWorldPosition(newX, groundEstimator.getGroundHeight(), newZ);
+      const groundY = groundEstimator.getGroundHeight();
+      placementReticle.setWorldPosition(newX, groundY, newZ);
+      // ADR-017: ドラッグ中も距離バッジとキャラクターのプレビューを
+      // 毎フレーム追従させる(placement本体には触れない、previewPlacementAt参照)。
+      updateDistanceBadge(newZ);
+      previewPlacementAt(newX, groundY, newZ);
     } else {
       const distance = Math.abs(placement.z - camera.position.z);
       const worldPerPixelY = (2 * Math.tan(vFovRad / 2) * distance) / rect.height;
@@ -957,7 +1034,8 @@ function stopVideoRecording() {
 function updateModeBtnLabel() {
   const iconSpan = modeBtn.querySelector('.mode-chip-fan');
   const labelSpan = modeBtn.querySelector('.fan-label');
-  if (iconSpan) iconSpan.textContent = isVideoMode ? '🎥' : '📷';
+  // ADR-017: 絵文字のtextContent直書きから、icons.jsのSVG差し込みへ変更。
+  if (iconSpan) iconSpan.innerHTML = ICONS[isVideoMode ? 'video' : 'camera'];
   if (labelSpan) labelSpan.textContent = isVideoMode ? '動画' : '写真';
   modeBtn.classList.toggle('active', isVideoMode);
 }
@@ -1009,7 +1087,7 @@ retakeBtn.addEventListener('click', () => resultScreen.classList.remove('show'))
 shareBtn.addEventListener('click', async () => {
   if (!lastBlob) return;
   const ext = lastIsVideo ? (lastBlob.type.includes('mp4') ? 'mp4' : 'webm') : 'png';
-  const file = new File([lastBlob], `oshi-camera.${ext}`, { type: lastBlob.type });
+  const file = new File([lastBlob], `alongscene.${ext}`, { type: lastBlob.type });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try { await navigator.share({ files: [file] }); return; }
     catch (err) { if (err && err.name === 'AbortError') return; console.error(err); }
